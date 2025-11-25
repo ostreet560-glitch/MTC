@@ -46,14 +46,14 @@
 ```mermaid
 flowchart TD
 
-A["Hardware Layer\n- TPM (PCR / AK / EK)\n- 加密狗 (HSM Key Storage)"]
-    --> B["Secure Boot / Measured Boot\n(OS Trust Chain)"]
+A["Hardware Layer<br>- TPM (PCR / AK / EK)<br>- 加密狗 (HSM Key Storage)"]
+    --> B["Secure Boot / Measured Boot<br>(OS Trust Chain)"]
 
-B --> C["Watchdog & Integrity\nVerification Layer"]
+B --> C["Watchdog & Integrity<br>Verification Layer"]
 
-C --> D["Online Auth & Key Dist\n- RSA Auth\n- TPM Attestation\n- Dog Signature Verify"]
+C --> D["Online Auth & Key Dist<br>- RSA Auth<br>- TPM Attestation<br>- Dog Signature Verify"]
 
-D --> E["Encrypted Main Program\nDecryption & Execution"]
+D --> E["Encrypted Main Program<br>Decryption & Execution"]
 
 ```
 
