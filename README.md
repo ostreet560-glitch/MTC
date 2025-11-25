@@ -1,4 +1,4 @@
-# MTC-s-Trusted-Computing
+# MTC: MTC's Trusted Computing
 # 基于融合 TPM、加密狗与 RSA 的多重信任链高安全在线程序分发与执行系统
 
 本项目旨在构建一个适用于高敏感、高风险环境的软件分发与执行体系。  
@@ -142,3 +142,7 @@ MIT 或选择你需要的高安全协议（如 Custom Enterprise License）。
 - [ ] 系统信任链图（Trust Chain Diagram）
 - [ ] 启动流程序列图（Sequence Diagram）
 - [ ] 安全性分析报告（Attack Surface & Defense）
+
+---
+
+### **灵感来源：Siemens Simatic, FlexNet Licensing, SEGA Amusement Linkage Live System & ALL-NET.**
