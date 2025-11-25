@@ -133,7 +133,7 @@ D --> E["Encrypted Main Program<br>Decryption & Execution"]
 - [ ] 启动密钥生成与下发模块
 - [ ] 程序版本检查与更新条目下发（255流程）
 - [ ] 安全日志与审计系统
-- [ ] 内部专用域名 am-dist.akiacg.com 配置
+- [ ] 内部专用域名配置
 - [ ] 区域/访问控制（无公网 DNS）
 - [ ] 可视化后台管理界面（可选）
 
