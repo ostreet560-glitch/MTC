@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
     char Dist_Server[256] = "am-dist.AkiACG.com";
     char IP[64] = "172.16.8.48";
     char Port[32] = "3502";
-    char AppPath[512] = ".\\main.exe";
+    char AppPath[512] = "..\\main.exe";
 
     // 3. 解析 INI
     if (IsDebug) {
@@ -101,12 +101,14 @@ int main(int argc, char **argv) {
     }
 
     // 输出结果
+    if (IsDebug == 1) {
     printf("--- Configuration ---\n");
     printf("IsDebug     : %d\n", IsDebug);
     printf("Dist-Server : %s\n", Dist_Server);
     printf("IP          : %s\n", IP);
     printf("Port        : %s\n", Port);
     printf("AppPath     : %s\n", AppPath);
+    }
 
     return 0;
 }
