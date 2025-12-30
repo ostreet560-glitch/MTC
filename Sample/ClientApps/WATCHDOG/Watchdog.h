@@ -2,6 +2,8 @@
 #define WATCHDOG_H
 
 #include <windows.h>
+// 用户态版本：不依赖 WDK
+#include "MTC_FS_Driver_UserMode.h"
 
 /* ===== Watchdog 状态码 ===== */
 typedef enum {

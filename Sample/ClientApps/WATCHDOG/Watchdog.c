@@ -27,8 +27,6 @@ static int g_debug_mode = 0;
 //    - 提供强制 BSOD 接口
 // 3. 通过 DeviceIoControl 与用户态通信
 
-#define IOCTL_WATCHDOG_HALT             CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_WATCHDOG_QUERY_STATUS     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define KERNEL_DRIVER_NAME              "\\\\.\\MTC_FS_Driver"
 
 static HANDLE g_kernel_driver_handle = NULL;
@@ -282,15 +280,17 @@ WatchdogStatus Watchdog_TriggerKernelHalt(const char *reason) {
     
     if (g_kernel_driver_handle) {
         // 通过内核驱动触发 BSOD
-        char halt_reason[256];
-        strncpy(halt_reason, reason, sizeof(halt_reason) - 1);
+        WATCHDOG_HALT_REQUEST halt_req = {0};
+        halt_req.magic = MTC_WATCHDOG_MAGIC;
+        strncpy((char *)halt_req.reason, reason ? reason : "Unknown", sizeof(halt_req.reason) - 1);
+        halt_req.error_code = 0xDEADBEEF;
         
         DWORD bytes_returned = 0;
         BOOL result = DeviceIoControl(
             g_kernel_driver_handle,
             IOCTL_WATCHDOG_HALT,
-            halt_reason,
-            strlen(halt_reason),
+            &halt_req,
+            sizeof(halt_req),
             NULL,
             0,
             &bytes_returned,
