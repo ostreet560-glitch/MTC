@@ -3,13 +3,109 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
-#include "../openssl/rsa.h"
-#include "../openssl/pem.h"
-#include "../openssl/err.h"
-#include "../openssl/bio.h"
-#include "../openssl/evp.h"
-#include "../openssl/aes.h"
 #include "../NetworkHelper/NetDeliver.h"
+#include <windows.h>
+
+// We'll load libcrypto at runtime; declare opaque OpenSSL types
+typedef void BIO;
+typedef void BIO_METHOD;
+typedef void EVP_PKEY;
+typedef void EVP_PKEY_CTX;
+typedef void EVP_CIPHER_CTX;
+typedef void EVP_CIPHER;
+
+// Function pointers for the OpenSSL APIs we use
+static HMODULE hCrypto = NULL;
+
+typedef BIO *(*FP_BIO_new_mem_buf)(const void *buf, int len);
+typedef BIO *(*FP_BIO_new)(BIO_METHOD *type);
+typedef BIO_METHOD *(*FP_BIO_f_base64)(void);
+typedef BIO *(*FP_BIO_push)(BIO *b, BIO *append);
+typedef int (*FP_BIO_set_flags)(BIO *b, int flags);
+typedef int (*FP_BIO_read)(BIO *b, void *data, int len);
+typedef void (*FP_BIO_free_all)(BIO *a);
+typedef EVP_PKEY *(*FP_PEM_read_bio_PrivateKey)(BIO *bp, EVP_PKEY **x, void *cb, void *u);
+typedef void (*FP_ERR_print_errors_fp)(FILE *fp);
+
+typedef EVP_PKEY_CTX *(*FP_EVP_PKEY_CTX_new)(EVP_PKEY *pkey, void *e);
+typedef int (*FP_EVP_PKEY_decrypt_init)(EVP_PKEY_CTX *ctx);
+typedef int (*FP_EVP_PKEY_CTX_set_rsa_padding)(EVP_PKEY_CTX *ctx, int pad);
+typedef int (*FP_EVP_PKEY_decrypt)(EVP_PKEY_CTX *ctx, unsigned char *out, size_t *outlen, const unsigned char *in, size_t inlen);
+typedef void (*FP_EVP_PKEY_free)(EVP_PKEY *pkey);
+typedef void (*FP_EVP_PKEY_CTX_free)(EVP_PKEY_CTX *ctx);
+
+typedef EVP_CIPHER_CTX *(*FP_EVP_CIPHER_CTX_new)(void);
+typedef int (*FP_EVP_DecryptInit_ex)(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *type, void *impl, const unsigned char *key, const unsigned char *iv);
+typedef int (*FP_EVP_CIPHER_CTX_ctrl)(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr);
+typedef int (*FP_EVP_DecryptUpdate)(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl, const unsigned char *in, int inl);
+typedef int (*FP_EVP_DecryptFinal_ex)(EVP_CIPHER_CTX *ctx, unsigned char *outm, int *outl);
+typedef void (*FP_EVP_CIPHER_CTX_free)(EVP_CIPHER_CTX *c);
+typedef const EVP_CIPHER *(*FP_EVP_aes_256_gcm)(void);
+
+static FP_BIO_new_mem_buf pBIO_new_mem_buf = NULL;
+static FP_BIO_new pBIO_new = NULL;
+static FP_BIO_f_base64 pBIO_f_base64 = NULL;
+static FP_BIO_push pBIO_push = NULL;
+static FP_BIO_set_flags pBIO_set_flags = NULL;
+static FP_BIO_read pBIO_read = NULL;
+static FP_BIO_free_all pBIO_free_all = NULL;
+static FP_PEM_read_bio_PrivateKey pPEM_read_bio_PrivateKey = NULL;
+static FP_ERR_print_errors_fp pERR_print_errors_fp = NULL;
+static FP_EVP_PKEY_CTX_new pEVP_PKEY_CTX_new = NULL;
+static FP_EVP_PKEY_decrypt_init pEVP_PKEY_decrypt_init = NULL;
+static FP_EVP_PKEY_CTX_set_rsa_padding pEVP_PKEY_CTX_set_rsa_padding = NULL;
+static FP_EVP_PKEY_decrypt pEVP_PKEY_decrypt = NULL;
+static FP_EVP_PKEY_free pEVP_PKEY_free = NULL;
+static FP_EVP_PKEY_CTX_free pEVP_PKEY_CTX_free = NULL;
+static FP_EVP_CIPHER_CTX_new pEVP_CIPHER_CTX_new = NULL;
+static FP_EVP_DecryptInit_ex pEVP_DecryptInit_ex = NULL;
+static FP_EVP_CIPHER_CTX_ctrl pEVP_CIPHER_CTX_ctrl = NULL;
+static FP_EVP_DecryptUpdate pEVP_DecryptUpdate = NULL;
+static FP_EVP_DecryptFinal_ex pEVP_DecryptFinal_ex = NULL;
+static FP_EVP_CIPHER_CTX_free pEVP_CIPHER_CTX_free = NULL;
+static FP_EVP_aes_256_gcm pEVP_aes_256_gcm = NULL;
+
+static int load_libcrypto(void) {
+    const char *names[] = {"libcrypto-3.dll", "libcrypto-1_1-x64.dll", "libcrypto-1_1.dll", "libeay32.dll", "libcrypto.dll"};
+    for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); ++i) {
+        hCrypto = LoadLibraryA(names[i]);
+        if (!hCrypto) continue;
+
+        pBIO_new_mem_buf = (FP_BIO_new_mem_buf)GetProcAddress(hCrypto, "BIO_new_mem_buf");
+        pBIO_new = (FP_BIO_new)GetProcAddress(hCrypto, "BIO_new");
+        pBIO_f_base64 = (FP_BIO_f_base64)GetProcAddress(hCrypto, "BIO_f_base64");
+        pBIO_push = (FP_BIO_push)GetProcAddress(hCrypto, "BIO_push");
+        pBIO_set_flags = (FP_BIO_set_flags)GetProcAddress(hCrypto, "BIO_set_flags");
+        pBIO_read = (FP_BIO_read)GetProcAddress(hCrypto, "BIO_read");
+        pBIO_free_all = (FP_BIO_free_all)GetProcAddress(hCrypto, "BIO_free_all");
+        pPEM_read_bio_PrivateKey = (FP_PEM_read_bio_PrivateKey)GetProcAddress(hCrypto, "PEM_read_bio_PrivateKey");
+        pERR_print_errors_fp = (FP_ERR_print_errors_fp)GetProcAddress(hCrypto, "ERR_print_errors_fp");
+        pEVP_PKEY_CTX_new = (FP_EVP_PKEY_CTX_new)GetProcAddress(hCrypto, "EVP_PKEY_CTX_new");
+        pEVP_PKEY_decrypt_init = (FP_EVP_PKEY_decrypt_init)GetProcAddress(hCrypto, "EVP_PKEY_decrypt_init");
+        pEVP_PKEY_CTX_set_rsa_padding = (FP_EVP_PKEY_CTX_set_rsa_padding)GetProcAddress(hCrypto, "EVP_PKEY_CTX_set_rsa_padding");
+        pEVP_PKEY_decrypt = (FP_EVP_PKEY_decrypt)GetProcAddress(hCrypto, "EVP_PKEY_decrypt");
+        pEVP_PKEY_free = (FP_EVP_PKEY_free)GetProcAddress(hCrypto, "EVP_PKEY_free");
+        pEVP_PKEY_CTX_free = (FP_EVP_PKEY_CTX_free)GetProcAddress(hCrypto, "EVP_PKEY_CTX_free");
+        pEVP_CIPHER_CTX_new = (FP_EVP_CIPHER_CTX_new)GetProcAddress(hCrypto, "EVP_CIPHER_CTX_new");
+        pEVP_DecryptInit_ex = (FP_EVP_DecryptInit_ex)GetProcAddress(hCrypto, "EVP_DecryptInit_ex");
+        pEVP_CIPHER_CTX_ctrl = (FP_EVP_CIPHER_CTX_ctrl)GetProcAddress(hCrypto, "EVP_CIPHER_CTX_ctrl");
+        pEVP_DecryptUpdate = (FP_EVP_DecryptUpdate)GetProcAddress(hCrypto, "EVP_DecryptUpdate");
+        pEVP_DecryptFinal_ex = (FP_EVP_DecryptFinal_ex)GetProcAddress(hCrypto, "EVP_DecryptFinal_ex");
+        pEVP_CIPHER_CTX_free = (FP_EVP_CIPHER_CTX_free)GetProcAddress(hCrypto, "EVP_CIPHER_CTX_free");
+        pEVP_aes_256_gcm = (FP_EVP_aes_256_gcm)GetProcAddress(hCrypto, "EVP_aes_256_gcm");
+
+        if (pBIO_new_mem_buf && pBIO_new && pBIO_f_base64 && pBIO_push && pBIO_set_flags && pBIO_read && pBIO_free_all &&
+            pPEM_read_bio_PrivateKey && pERR_print_errors_fp && pEVP_PKEY_CTX_new && pEVP_PKEY_decrypt_init && pEVP_PKEY_CTX_set_rsa_padding &&
+            pEVP_PKEY_decrypt && pEVP_PKEY_free && pEVP_PKEY_CTX_free && pEVP_CIPHER_CTX_new && pEVP_DecryptInit_ex && pEVP_CIPHER_CTX_ctrl &&
+            pEVP_DecryptUpdate && pEVP_DecryptFinal_ex && pEVP_CIPHER_CTX_free && pEVP_aes_256_gcm) {
+            return 1;
+        }
+
+        FreeLibrary(hCrypto);
+        hCrypto = NULL;
+    }
+    return 0;
+}
 
 // 从 JSON 响应中提取 RSA 私钥字段 (Base64 编码)
 static int extract_rsa_key_from_json(const char *json_response, char *rsa_key, int key_size) {
@@ -114,18 +210,19 @@ static int extract_iv_from_json(const char *json_response, unsigned char *iv, in
 // Base64 解码（简单实现）
 static int base64_decode(const unsigned char *input, int input_len,
                          unsigned char *output, int *output_len) {
-    BIO *bio, *b64;
-    int decode_len;
-    
-    bio = BIO_new_mem_buf((void *)input, input_len);
-    b64 = BIO_new(BIO_f_base64());
-    bio = BIO_push(b64, bio);
-    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
-    
-    decode_len = BIO_read(bio, output, input_len);
+    if (!hCrypto) {
+        if (!load_libcrypto()) return 0;
+    }
+
+    BIO *bio = pBIO_new_mem_buf((void *)input, input_len);
+    if (!bio) return 0;
+    BIO *b64 = pBIO_new(pBIO_f_base64());
+    BIO *b = pBIO_push(b64, bio);
+    /* BIO_FLAGS_BASE64_NO_NL == 0x100 */
+    pBIO_set_flags(b, 0x100);
+    int decode_len = pBIO_read(b, output, input_len);
     *output_len = decode_len;
-    BIO_free_all(bio);
-    
+    pBIO_free_all(b);
     return (decode_len > 0) ? 1 : 0;
 }
 
@@ -133,24 +230,27 @@ static int base64_decode(const unsigned char *input, int input_len,
 static int aes_256_gcm_decrypt(const unsigned char *ciphertext, int ciphertext_len,
                                const unsigned char *key, const unsigned char *iv,
                                unsigned char *plaintext) {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    int len, plaintext_len;
+    if (!hCrypto) {
+        if (!load_libcrypto()) return -1;
+    }
 
-    // 初始化解密操作
-    EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL);
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, NULL);
-    EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv);
+    EVP_CIPHER_CTX *ctx = pEVP_CIPHER_CTX_new();
+    if (!ctx) return -1;
 
-    // 解密数据
-    EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len);
+    pEVP_DecryptInit_ex(ctx, pEVP_aes_256_gcm(), NULL, NULL, NULL);
+    /* EVP_CTRL_GCM_SET_IVLEN == 0x9 */
+    pEVP_CIPHER_CTX_ctrl(ctx, 0x9, 12, NULL);
+    pEVP_DecryptInit_ex(ctx, NULL, NULL, key, iv);
+
+    int len = 0, plaintext_len = 0;
+    pEVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len);
     plaintext_len = len;
 
-    // GCM 模式下通常在这里校验 Tag (为了作业简化，此处省略 Tag 校验，生产环境必须加)
-    if (EVP_DecryptFinal_ex(ctx, plaintext + len, &len) > 0) {
+    if (pEVP_DecryptFinal_ex(ctx, plaintext + len, &len) > 0) {
         plaintext_len += len;
     }
 
-    EVP_CIPHER_CTX_free(ctx);
+    pEVP_CIPHER_CTX_free(ctx);
     return plaintext_len;
 }
 
@@ -158,57 +258,34 @@ static int aes_256_gcm_decrypt(const unsigned char *ciphertext, int ciphertext_l
 static int rsa_decrypt_aes_key(const char *private_key_pem,
                                const unsigned char *encrypted_aes_key, int enc_key_len,
                                unsigned char *aes_key, int *aes_key_len) {
-    BIO *bio = NULL;
-    EVP_PKEY *pkey = NULL;
-    EVP_PKEY_CTX *ctx = NULL;
+    if (!hCrypto) {
+        if (!load_libcrypto()) return 0;
+    }
+
+    BIO *bio = pBIO_new_mem_buf((void *)private_key_pem, -1);
+    if (!bio) { printf("✗ Failed to create BIO\n"); return 0; }
+
+    EVP_PKEY *pkey = pPEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+    if (!pkey) { printf("✗ Failed to read private key from PEM\n"); pERR_print_errors_fp(stderr); pBIO_free_all(bio); return 0; }
+
+    EVP_PKEY_CTX *ctx = pEVP_PKEY_CTX_new(pkey, NULL);
+    if (!ctx) { printf("✗ Failed to create EVP_PKEY_CTX\n"); pEVP_PKEY_free(pkey); pBIO_free_all(bio); return 0; }
+
+    if (pEVP_PKEY_decrypt_init(ctx) <= 0) { printf("✗ Failed to initialize decrypt\n"); pEVP_PKEY_CTX_free(ctx); pEVP_PKEY_free(pkey); pBIO_free_all(bio); return 0; }
+
+    /* RSA_PKCS1_PADDING == 1 */
+    if (pEVP_PKEY_CTX_set_rsa_padding(ctx, 1) <= 0) { printf("✗ Failed to set RSA padding\n"); pEVP_PKEY_CTX_free(ctx); pEVP_PKEY_free(pkey); pBIO_free_all(bio); return 0; }
+
     size_t outlen = 32;
-    int result = 0;
-    
-    bio = BIO_new_mem_buf((void *)private_key_pem, -1);
-    if (!bio) {
-        printf("✗ Failed to create BIO\n");
-        return 0;
-    }
-    
-    pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
-    if (!pkey) {
-        printf("✗ Failed to read private key from PEM\n");
-        ERR_print_errors_fp(stderr);
-        goto cleanup;
-    }
-    
-    ctx = EVP_PKEY_CTX_new(pkey, NULL);
-    if (!ctx) {
-        printf("✗ Failed to create EVP_PKEY_CTX\n");
-        goto cleanup;
-    }
-    
-    if (EVP_PKEY_decrypt_init(ctx) <= 0) {
-        printf("✗ Failed to initialize decrypt\n");
-        goto cleanup;
-    }
-    
-    if (EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PADDING) <= 0) {
-        printf("✗ Failed to set RSA padding\n");
-        goto cleanup;
-    }
-    
-    if (EVP_PKEY_decrypt(ctx, aes_key, &outlen, encrypted_aes_key, enc_key_len) <= 0) {
-        printf("✗ Failed to decrypt AES key envelope\n");
-        ERR_print_errors_fp(stderr);
-        goto cleanup;
-    }
-    
+    if (pEVP_PKEY_decrypt(ctx, aes_key, &outlen, encrypted_aes_key, enc_key_len) <= 0) { printf("✗ Failed to decrypt AES key envelope\n"); pERR_print_errors_fp(stderr); pEVP_PKEY_CTX_free(ctx); pEVP_PKEY_free(pkey); pBIO_free_all(bio); return 0; }
+
     *aes_key_len = (int)outlen;
     printf("✓ Successfully decrypted AES key (size: %d bytes)\n", *aes_key_len);
-    result = 1;
-    
-cleanup:
-    if (ctx) EVP_PKEY_CTX_free(ctx);
-    if (pkey) EVP_PKEY_free(pkey);
-    if (bio) BIO_free(bio);
-    
-    return result;
+
+    pEVP_PKEY_CTX_free(ctx);
+    pEVP_PKEY_free(pkey);
+    pBIO_free_all(bio);
+    return 1;
 }
 static char* trim_string(char *str) {
     if (!str) return "";
@@ -285,11 +362,54 @@ static int read_apppath_from_ini(const char *ini_path, char *apppath, int apppat
 }
 
 int main(int argc, char **argv) {
+    // 动态加载 NetDeliver DLL 并获取 API
+    typedef void (WINAPI *PFN_NetDeliver_Init)(int, char **);
+    typedef NetConfig* (WINAPI *PFN_NetDeliver_GetConfig)(void);
+    typedef NetResponse* (WINAPI *PFN_NetDeliver_SendRequest)(const char *, const char *);
+    typedef void (WINAPI *PFN_NetDeliver_FreeResponse)(NetResponse *);
+
+    typedef struct {
+        HMODULE h;
+        PFN_NetDeliver_Init Init;
+        PFN_NetDeliver_GetConfig GetConfig;
+        PFN_NetDeliver_SendRequest SendRequest;
+        PFN_NetDeliver_FreeResponse FreeResponse;
+    } NetDeliverAPI;
+
+    NetDeliverAPI api = {0};
+
+    const char *candidates[] = {
+        "NetDeliver.dll",
+        "..\\NetworkHelper\\NetDeliver.dll",
+        "..\\..\\Sample\\ClientApps\\NetworkHelper\\NetDeliver.dll",
+        "Sample\\ClientApps\\NetworkHelper\\NetDeliver.dll"
+    };
+
+    for (size_t i = 0; i < sizeof(candidates)/sizeof(candidates[0]); ++i) {
+        api.h = LoadLibraryA(candidates[i]);
+        if (!api.h) continue;
+
+        api.Init = (PFN_NetDeliver_Init)GetProcAddress(api.h, "NetDeliver_Init");
+        api.GetConfig = (PFN_NetDeliver_GetConfig)GetProcAddress(api.h, "NetDeliver_GetConfig");
+        api.SendRequest = (PFN_NetDeliver_SendRequest)GetProcAddress(api.h, "NetDeliver_SendRequest");
+        api.FreeResponse = (PFN_NetDeliver_FreeResponse)GetProcAddress(api.h, "NetDeliver_FreeResponse");
+
+        if (api.Init && api.GetConfig && api.SendRequest && api.FreeResponse) break;
+
+        FreeLibrary(api.h);
+        api.h = NULL;
+    }
+
+    if (!api.h) {
+        fprintf(stderr, "Failed to load NetDeliver.dll from known locations.\n");
+        return 1;
+    }
+
     // 初始化网络配置
-    NetDeliver_Init(argc, argv);
-    
+    api.Init(argc, argv);
+
     // 获取配置
-    NetConfig *config = NetDeliver_GetConfig();
+    NetConfig *config = api.GetConfig();
     
     // 输出结果
     if (config->IsDebug) {
@@ -340,7 +460,7 @@ int main(int argc, char **argv) {
     
     printf("Sending request: %s\n", request_json);
     
-    NetResponse *resp = NetDeliver_SendRequest("/api/decrypt", request_json);
+    NetResponse *resp = api.SendRequest("/api/decrypt", request_json);
     if (resp) {
         printf("Response status: %d\n", resp->status_code);
         if (resp->data) {
@@ -353,7 +473,7 @@ int main(int argc, char **argv) {
             char private_key_pem[4096] = {0};
             if (!extract_rsa_key_from_json(resp->data, private_key_pem, sizeof(private_key_pem))) {
                 printf("✗ Failed to extract RSA private key from response\n");
-                NetDeliver_FreeResponse(resp);
+                api.FreeResponse(resp);
                 return 1;
             }
             
@@ -362,7 +482,7 @@ int main(int argc, char **argv) {
             int rsa_k_b64_len = 0;
             if (!extract_rsa_k_from_json(resp->data, rsa_k_b64, &rsa_k_b64_len)) {
                 printf("✗ Failed to extract RSA_K from response\n");
-                NetDeliver_FreeResponse(resp);
+                api.FreeResponse(resp);
                 return 1;
             }
             
@@ -371,7 +491,7 @@ int main(int argc, char **argv) {
             int rsa_k_binary_len = 0;
             if (!base64_decode(rsa_k_b64, rsa_k_b64_len, rsa_k_binary, &rsa_k_binary_len)) {
                 printf("✗ Failed to decode RSA_K from Base64\n");
-                NetDeliver_FreeResponse(resp);
+                api.FreeResponse(resp);
                 return 1;
             }
             
@@ -386,7 +506,7 @@ int main(int argc, char **argv) {
             if (!rsa_decrypt_aes_key(private_key_pem, rsa_k_binary, rsa_k_binary_len, 
                                      aes_key, &aes_key_len)) {
                 printf("✗ Failed to decrypt AES key envelope\n");
-                NetDeliver_FreeResponse(resp);
+                api.FreeResponse(resp);
                 return 1;
             }
             
@@ -408,7 +528,7 @@ int main(int argc, char **argv) {
             FILE *encrypted_file = fopen(app_path, "rb");
             if (!encrypted_file) {
                 printf("✗ Failed to open encrypted app: %s\n", app_path);
-                NetDeliver_FreeResponse(resp);
+                api.FreeResponse(resp);
                 return 1;
             }
             
@@ -425,7 +545,7 @@ int main(int argc, char **argv) {
                 free(encrypted_data);
                 free(decrypted_data);
                 fclose(encrypted_file);
-                NetDeliver_FreeResponse(resp);
+                api.FreeResponse(resp);
                 return 1;
             }
             fclose(encrypted_file);
@@ -461,7 +581,7 @@ int main(int argc, char **argv) {
             free(encrypted_data);
             free(decrypted_data);
         }
-        NetDeliver_FreeResponse(resp);
+        api.FreeResponse(resp);
     }
 
     return 0;

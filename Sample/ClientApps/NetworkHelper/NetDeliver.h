@@ -1,6 +1,49 @@
 #ifndef NETDELIVER_H
 #define NETDELIVER_H
 
+#include <winsock2.h>
+#include <windows.h>
+
+#ifdef NETDELIVER_EXPORTS
+#define NETDELIVER_API __declspec(dllexport)
+#else
+#define NETDELIVER_API __declspec(dllimport)
+#endif
+
+typedef struct {
+    int status_code;
+    char *data;
+    int data_len;
+} NetResponse;
+
+typedef struct {
+    int IsDebug;
+    char Dist_Server[256];
+    char IP[64];
+    char Port[32];
+    char AppPath[512];
+} NetConfig;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+NETDELIVER_API BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
+
+NETDELIVER_API void WINAPI NetDeliver_Init(int argc, char **argv);
+NETDELIVER_API NetConfig* WINAPI NetDeliver_GetConfig(void);
+NETDELIVER_API void WINAPI NetDeliver_DebugPrint(const char *fmt, ...);
+NETDELIVER_API NetResponse* WINAPI NetDeliver_SendRequest(const char *endpoint, const char *json_data);
+NETDELIVER_API void WINAPI NetDeliver_FreeResponse(NetResponse *resp);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // NETDELIVER_H
+#ifndef NETDELIVER_H
+#define NETDELIVER_H
+
 typedef struct {
     int IsDebug;
     char Dist_Server[256];
