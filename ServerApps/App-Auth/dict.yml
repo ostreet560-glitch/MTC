@@ -1,0 +1,20 @@
+# dict.yml: test response dictionary for App-Auth validator
+# Sample filled values for quick testing. Replace with real keys for end-to-end.
+
+# Multiline RSA private key (PEM). For real tests replace with a valid RSA PEM.
+RSA: |
+	-----BEGIN RSA PRIVATE KEY-----
+	MIIBPAIBAAJBALe0Y2o1kGqO6qzv1s7VYxq1oX1qfYF3YV8kq3u8KcXG8k2x0YvF
+	v9c8hXwK3jQh1v3Y2q7qz7Yb1K3R9c2Wq0ECAwEAAQJAS0s3X9QpZ6lJZsZkK2Y
+	q3Z0qk1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7A==
+	-----END RSA PRIVATE KEY-----
+
+# RSA_K: base64-encoded encrypted AES key (placeholder for test)
+RSA_K: "aGVsbG9fZW5jcnlwdGVk"   # base64 for "hello_encrypted"
+
+# IV: base64 encoding of 12-byte IV (placeholder)
+IV: "AAAAAAAAAAAAAAAAAAAAAA=="
+
+# Optional per-request-code mapping (string must be JSON). Example for reqCode=22
+#reqCode_22: '{"note":"this is a mapped response for reqCode 22"}'
+

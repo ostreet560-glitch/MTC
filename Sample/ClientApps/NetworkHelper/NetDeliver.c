@@ -1,29 +1,15 @@
+#define NETDELIVER_EXPORTS
+#include "NetDeliver.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
-#include <winsock2.h>
 
 #pragma comment(lib, "ws2_32.lib")
 
-/* ===== Network Request/Response Structure ===== */
-
-typedef struct {
-    int status_code;        // HTTP status code
-    char *data;             // Response body (JSON)
-    int data_len;
-} NetResponse;
-
 /* ===== Debug Configuration & INI Parsing ===== */
-
-typedef struct {
-    int IsDebug;
-    char Dist_Server[256];
-    char IP[64];
-    char Port[32];
-    char AppPath[512];
-} NetConfig;
 
 static NetConfig g_config = {0};
 static int g_config_initialized = 0;
@@ -57,8 +43,20 @@ static int strieq(const char *a, const char *b) {
     return *a == *b;
 }
 
+// DLL 入口
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
+    switch (fdwReason) {
+        case DLL_PROCESS_ATTACH:
+            DisableThreadLibraryCalls(hinstDLL);
+            break;
+        case DLL_PROCESS_DETACH:
+            break;
+    }
+    return TRUE;
+}
+
 // 初始化网络配置，应在程序启动时调用一次
-void NetDeliver_Init(int argc, char **argv) {
+NETDELIVER_API void WINAPI NetDeliver_Init(int argc, char **argv) {
     if (g_config_initialized) return;
     
     int IsDebug = 0;
@@ -85,9 +83,11 @@ void NetDeliver_Init(int argc, char **argv) {
     strcpy(g_config.Port, "3502");
     strcpy(g_config.AppPath, "..\\main.exe");
 
-    // 3. 解析 INI
-    if (IsDebug) {
-        FILE *f = fopen("AkiTools.ini", "r");
+    // 3. 强制解析 INI（优先使用环境变量 AKITOOLS_INI 指定的路径）
+    {
+        const char *ini_path = getenv("AKITOOLS_INI");
+        if (!ini_path) ini_path = "../AkiTools.ini";
+        FILE *f = fopen(ini_path, "r");
         if (f) {
             char line[1024];
             int inDebugSection = 0;
@@ -122,6 +122,9 @@ void NetDeliver_Init(int argc, char **argv) {
                         strncpy(g_config.Port, val, sizeof(g_config.Port)-1);
                     } else if (strieq(key, "AppPath")) {
                         strncpy(g_config.AppPath, val, sizeof(g_config.AppPath)-1);
+                    } else if (strieq(key, "IsDebug")) {
+                        if (strieq(val, "1") || strieq(val, "true")) g_config.IsDebug = 1;
+                        else g_config.IsDebug = 0;
                     }
                 }
             }
@@ -143,7 +146,7 @@ void NetDeliver_Init(int argc, char **argv) {
 }
 
 // 获取当前网络配置
-NetConfig* NetDeliver_GetConfig(void) {
+NETDELIVER_API NetConfig* WINAPI NetDeliver_GetConfig(void) {
     if (!g_config_initialized) {
         fprintf(stderr, "Warning: NetConfig not initialized. Call NetDeliver_Init() first.\n");
     }
@@ -151,7 +154,7 @@ NetConfig* NetDeliver_GetConfig(void) {
 }
 
 // 调试打印网络请求（当 IsDebug=1 时）
-void NetDeliver_DebugPrint(const char *fmt, ...) {
+NETDELIVER_API void WINAPI NetDeliver_DebugPrint(const char *fmt, ...) {
     if (!g_config.IsDebug) return;
     
     va_list args;
@@ -189,7 +192,7 @@ static void base64_encode(const char *src, int src_len, char *dst, int dst_size)
 // 发送 HTTP 请求到 Dist-Server
 // 参数: endpoint - 请求路径，json_data - JSON 请求体
 // 返回: NetResponse 结构，包含状态码和响应 JSON
-NetResponse* NetDeliver_SendRequest(const char *endpoint, const char *json_data) {
+NETDELIVER_API NetResponse* WINAPI NetDeliver_SendRequest(const char *endpoint, const char *json_data) {
     NetResponse *resp = (NetResponse *)malloc(sizeof(NetResponse));
     if (!resp) return NULL;
     
@@ -314,7 +317,7 @@ NetResponse* NetDeliver_SendRequest(const char *endpoint, const char *json_data)
 }
 
 // 释放 NetResponse 内存
-void NetDeliver_FreeResponse(NetResponse *resp) {
+NETDELIVER_API void WINAPI NetDeliver_FreeResponse(NetResponse *resp) {
     if (resp) {
         if (resp->data) free(resp->data);
         free(resp);
