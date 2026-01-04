@@ -10,7 +10,9 @@
                 "${file}",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                ""
+                "-lssl",
+                "-lcrypto",
+                "-lws2_32"
             ],
             "options": {
                 "cwd": "C:/MinGW/bin"

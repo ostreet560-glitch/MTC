@@ -87,7 +87,7 @@ void NetDeliver_Init(int argc, char **argv) {
 
     // 3. 解析 INI
     if (IsDebug) {
-        FILE *f = fopen("AkiTools.ini", "r");
+        FILE *f = fopen("../AkiTools.ini", "r");
         if (f) {
             char line[1024];
             int inDebugSection = 0;
